@@ -54,9 +54,18 @@ cdef extern from "ncap.h":
         ncap_result_e (*add_if)(ncap *ncap, char *name, char *bpf,
                                int promisc, int vlans[], int vlan, int *fdes)
         ncap_result_e (*drop_if)(ncap *ncap, int fdes)
+        ncap_result_e (*filter)(ncap *ncap, char *filter)
+        void (*stop)(ncap *obj)
         void (*destroy)(ncap *obj)
 
     ctypedef ncap *ncap_t
+
+    ctypedef struct ncap_msg
+    ctypedef ncap_msg *ncap_msg_t
+    ctypedef ncap_msg *ncap_msg_ct
+    ctypedef void (*ncap_callback_t)(ncap_t ncap, void *ctx,
+                                     ncap_msg_ct msg_ct,
+                                     char *msg)
 
     ncap_t ncap_create(int maxmsg)
 
@@ -70,37 +79,52 @@ cdef class NCap:
     cdef ncap_t _ncap
 
     def __cinit__(self, maxmsg):
-        """Creates an NCap instances with messages up to maxmsg bytes."""
-        self._ncap = ncap_create(maxmsg)
+      """Creates an NCap instances with messages up to maxmsg bytes."""
+      self._ncap = ncap_create(maxmsg)
 
     def __dealloc__(self):
-        self._ncap.destroy(self._ncap)
+      self._ncap.destroy(self._ncap)
 
     def AddIf(self, name, bpf, promisc, vlans):
-        """Adds capture to the interface called "name" with the bpf filter
-        "bpf". The capture is promiscuous if "promisc" is True. A list of
-        VLANs can be passed in via "vlans"
-        """
-        cdef int fdes
-        cdef ncap_result_e result
-        cdef int *c_vlans
-
-        c_vlans = <int *>malloc(8 * len(vlans))
-        for off in range(len(vlans)):
-            c_vlans[off] = vlans[off]
+      """Adds capture to the interface called "name" with the bpf filter
+      "bpf". The capture is promiscuous if "promisc" is True. A list of
+      VLANs can be passed in via "vlans"
+      """
+      cdef int fdes
+      cdef ncap_result_e result
+      cdef int *c_vlans
+      
+      c_vlans = <int *>malloc(8 * len(vlans))
+      for off in range(len(vlans)):
+        c_vlans[off] = vlans[off]
         
-        result = self._ncap.add_if(self._ncap, name, bpf, promisc,
+      result = self._ncap.add_if(self._ncap, name, bpf, promisc,
                                    c_vlans, len(vlans), &fdes)
-        free(c_vlans)
+      free(c_vlans)
         
-        if result != ncap_success:
-            raise NCapError, self._ncap.errstr
+      if result != ncap_success:
+        raise NCapError, self._ncap.errstr
 
-        return fdes
+      return fdes
 
     def DropIf(self, fdes):
-        cdef ncap_result_e result
+      """Drops the interface associated with the file descriptor fdes.
+      Returns true on success and false otherwise."""
+      cdef ncap_result_e result
+      
+      result = self._ncap.drop_if(self._ncap, fdes)
+      return result == ncap_success
 
-        result = self._ncap.drop_if(self._ncap, fdes)
-        if result != ncap_success:
-            raise NCapError, self._ncap.errstr
+    def Filter(self, filter):
+      """Installs a new pcap filter on the capture thingy.
+      Returns true on success, false otherwise."""
+
+      cdef ncap_result_e result
+
+      result = self._ncap.filter(self._ncap, filter)
+      return result == ncap_success
+
+    def Stop(self):
+      """Stops the collect loop."""
+
+      self._ncap.stop(self._ncap)
