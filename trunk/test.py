@@ -1,7 +1,12 @@
+#
+# Simple testing program for pyncap
+#
 import pyncap
 
 n = pyncap.NCap(10000)
 fd = n.AddIf("en0", "tcp or udp", True, [])
+print n.DropFd(100)
+print n.LastError()
 
 count = 0
 
