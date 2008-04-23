@@ -24,6 +24,15 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+cdef extern from "sys/types.h":
+  ctypedef unsigned size_t
+
+cdef extern from "time.h":
+  ctypedef long time_t
+  ctypedef struct timespec:
+    time_t tv_sec
+    long tv_nsec
+
 cdef extern from "stdlib.h":
   void *malloc(int len)
   void free(void *buf)
@@ -60,12 +69,24 @@ cdef extern from "ncap.h":
 
     ctypedef ncap *ncap_t
 
-    ctypedef struct ncap_msg
+    ctypedef union ncap_np
+    ctypedef union ncap_tp
+    
+    ctypedef struct ncap_msg:
+      timespec ts
+      unsigned user1
+      unsigned user2
+      ncap_np_e np
+      ncap_tp_e tp
+      size_t paylen
+      char *payload
+      
     ctypedef ncap_msg *ncap_msg_t
     ctypedef ncap_msg *ncap_msg_ct
     ctypedef void (*ncap_callback_t)(ncap_t ncap, void *ctx,
                                      ncap_msg_ct msg_ct,
                                      char *msg)
+    ctypedef void (*ncap_watcher_t)(ncap_t ncap, void *ctx, int fdes)
 
     ncap_t ncap_create(int maxmsg)
 
