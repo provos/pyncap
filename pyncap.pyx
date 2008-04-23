@@ -24,6 +24,9 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+cdef extern from "Python.h":
+  ctypedef void PyObject
+
 cdef extern from "sys/types.h":
   ctypedef unsigned size_t
 
@@ -57,18 +60,6 @@ cdef extern from "ncap.h":
     ctypedef struct ncap_pvt
     ctypedef ncap_pvt *ncap_pvt_t
 
-    ctypedef struct ncap:
-        ncap_pvt_t pvt
-        char *errstr
-        ncap_result_e (*add_if)(ncap *ncap, char *name, char *bpf,
-                               int promisc, int vlans[], int vlan, int *fdes)
-        ncap_result_e (*drop_if)(ncap *ncap, int fdes)
-        ncap_result_e (*filter)(ncap *ncap, char *filter)
-        void (*stop)(ncap *obj)
-        void (*destroy)(ncap *obj)
-
-    ctypedef ncap *ncap_t
-
     ctypedef union ncap_np
     ctypedef union ncap_tp
     
@@ -83,12 +74,30 @@ cdef extern from "ncap.h":
       
     ctypedef ncap_msg *ncap_msg_t
     ctypedef ncap_msg *ncap_msg_ct
+
+    ctypedef struct ncap:
+        ncap_pvt_t pvt
+        char *errstr
+        ncap_result_e (*add_if)(ncap *ncap, char *name, char *bpf,
+                               int promisc, int vlans[], int vlan, int *fdes)
+        ncap_result_e (*drop_if)(ncap *ncap, int fdes)
+        ncap_result_e (*filter)(ncap *ncap, char *filter)
+        ncap_result_e (*write)(ncap *ncap, ncap_msg_ct msg, int fdes)
+        void (*stop)(ncap *obj)
+        void (*destroy)(ncap *obj)
+
+    ctypedef ncap *ncap_t
+
     ctypedef void (*ncap_callback_t)(ncap_t ncap, void *ctx,
                                      ncap_msg_ct msg_ct,
                                      char *msg)
     ctypedef void (*ncap_watcher_t)(ncap_t ncap, void *ctx, int fdes)
 
     ncap_t ncap_create(int maxmsg)
+
+cdef extern from "wrap.h":
+  PyObject* wrap_ncap_msg_to_python(ncap_msg_t msg)
+  ncap_msg_t wrap_python_to_ncap_msg(PyObject *obj)
 
 class NCapError(Exception):
     pass
@@ -149,3 +158,14 @@ cdef class NCap:
       """Stops the collect loop."""
 
       self._ncap.stop(self._ncap)
+
+    def Write(self, msg, fdes):
+      cdef ncap_msg_t ncap_msg
+      cdef ncap_result_e result
+      
+      ncap_msg = wrap_python_to_ncap_msg(<PyObject *>msg)
+      if not ncap_msg:
+        raise NCapError, "cannot convert to ncap_msg"
+
+      result = self._ncap.write(self._ncap, ncap_msg, fdes)
+      return result == ncap_success
