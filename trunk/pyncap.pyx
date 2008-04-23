@@ -113,7 +113,7 @@ cdef extern from "ncap.h":
 
 cdef extern from "wrap.h":
   object wrap_ncap_msg_to_python(ncap_msg_t msg)
-  ncap_msg_t wrap_python_to_ncap_msg(PyObject *obj)
+  int wrap_python_to_ncap_msg(PyObject *src, ncap_msg_t dst)
 
 class NCapError(Exception):
     pass
