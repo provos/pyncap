@@ -30,6 +30,12 @@ cdef extern from "Python.h":
 cdef extern from "sys/types.h":
   ctypedef unsigned size_t
 
+cdef extern from "stdio.h":
+  ctypedef void FILE
+
+  FILE *fdopen(int filedes, char *mode)
+  void fclose(FILE *fp)
+
 cdef extern from "time.h":
   ctypedef long time_t
   ctypedef struct timespec:
@@ -76,25 +82,32 @@ cdef extern from "ncap.h":
     ctypedef ncap_msg *ncap_msg_ct
 
     ctypedef struct ncap
+    ctypedef ncap *ncap_t
+
     ctypedef void (*ncap_callback_t)(ncap *ncap, void *ctx,
                                      ncap_msg_ct msg_ct,
                                      char *msg)
+    ctypedef void (*ncap_watcher_t)(ncap_t ncap, void *ctx, int fdes)
+
     ctypedef struct ncap:
         ncap_pvt_t pvt
         char *errstr
-        ncap_result_e (*add_if)(ncap *ncap, char *name, char *bpf,
+        ncap_result_e (*add_if)(ncap_t ncap, char *name, char *bpf,
                                int promisc, int vlans[], int vlan, int *fdes)
-        ncap_result_e (*drop_if)(ncap *ncap, int fdes)
-        ncap_result_e (*filter)(ncap *ncap, char *filter)
-        ncap_result_e (*collect)(ncap *ncap, int polling, ncap_callback_t cb,
+        ncap_result_e (*drop_if)(ncap_t ncap, int fdes)
+        ncap_result_e (*add_fp)(ncap_t ncap, FILE *, ncap_ft_e, char *)
+        ncap_result_e (*drop_fp)(ncap_t ncap, FILE *)
+        ncap_result_e (*add_dg)(ncap_t, int fdes, char *)
+        ncap_result_e (*drop_dg)(ncap_t, int fdes)
+        ncap_result_e (*watch_fd)(ncap_t ncap, int fdes,
+                                  ncap_watcher_t cb, void *ctx)
+        ncap_result_e (*drop_fd)(ncap_t, int fdes)
+        ncap_result_e (*filter)(ncap_t ncap, char *filter)
+        ncap_result_e (*collect)(ncap_t ncap, int polling, ncap_callback_t cb,
                                  void *closure)
-        ncap_result_e (*write)(ncap *ncap, ncap_msg_ct msg, int fdes)
+        ncap_result_e (*write)(ncap_t ncap, ncap_msg_ct msg, int fdes)
         void (*stop)(ncap *obj)
         void (*destroy)(ncap *obj)
-
-    ctypedef ncap *ncap_t
-
-    ctypedef void (*ncap_watcher_t)(ncap_t ncap, void *ctx, int fdes)
 
     ncap_t ncap_create(int maxmsg)
 
@@ -116,18 +129,44 @@ cdef void callback(ncap_t ncap, void *ctx, ncap_msg_ct msg, char *some):
   
   (<object>ctx)(some, converted)
 
+cdef void watcher(ncap_t ncap, void *ctx, int fdes):
+  (<object>ctx)(fdes)
+
+#
+# The ncap interfaces are not well suited for binding to Python,
+# we need to fake up a file class
+#
+
+cdef class NCapFile:
+  """Convert a Python File object into a FILE object."""
+  cdef FILE *_fp
+  
+  def __cinit__(self, file):
+    self._fp = fdopen(file.fileno(), "r")
+    if not self._fp:
+      raise NCapError, "Cannot create file from %s" % file
+
+  def __dealloc__(self):
+    fclose(self._fp)
+
 #
 # Make NCap into a proper class
 #
 cdef class NCap:
     cdef ncap_t _ncap
+    cdef object _files
 
     def __cinit__(self, maxmsg):
       """Creates an NCap instances with messages up to maxmsg bytes."""
       self._ncap = ncap_create(maxmsg)
+      self._files = {}
 
     def __dealloc__(self):
       self._ncap.destroy(self._ncap)
+
+    def LastError(self):
+      """Returns the last encountered error string."""
+      return self._ncap.errstr
 
     def AddIf(self, name, bpf, promisc, vlans):
       """Adds capture to the interface called "name" with the bpf filter
@@ -157,6 +196,73 @@ cdef class NCap:
       cdef ncap_result_e result
       
       result = self._ncap.drop_if(self._ncap, fdes)
+      return result == ncap_success
+
+    def AddFp(self, file, fmt, label):
+      """Adds the opened file to the data collection.  fmt describes if the
+      data is formatted either in pcap or in ncap.  The label is used to label
+      the data stream."""
+      cdef ncap_result_e result
+      cdef ncap_ft_e format
+
+      if fmt == "ncap":
+        format = ncap_ncap
+      elif fmt == "pcap":
+        format = ncap_pcap
+      else:
+        raise NCapError, "unknown data format: %s" % fmt
+
+      if self._files.has_key(file.fileno()):
+        raise NCapError, "already associated fd %d" % file.fileno()
+
+      # this has side effects, even if the add_fp fails, we have create this
+      # file object and it needs to be dropped with drop_fp
+      nf = NCapFile(file)
+      self._files[file.fileno()] = nf
+
+      result = self._ncap.add_fp(self._ncap, <FILE*>nf._fp, format, label)
+
+      return result == ncap_success
+
+    def DropFp(self, file):
+      """Drop a previously added file object."""
+      cdef ncap_result_e result
+
+      if not self._files.has_key(file.fileno()):
+        raise NCapError, "the fd is not associated: %d" % file.fileno()
+
+      nf = self._files[file.fileno()]
+
+      result = self._ncap.drop_fp(self._ncap, <FILE*>nf._fp)
+
+      del self._files[file.fileno()]
+
+      return result == ncap_success
+
+    def AddDg(self, fdes, label):
+      cdef ncap_result_e result
+
+      result = self._ncap.add_dg(self._ncap, fdes, label)
+      return result == ncap_success
+
+    def DropDg(self, fdes):
+      cdef ncap_result_e result
+
+      result = self._ncap.drop_dg(self._ncap, fdes)
+      return result == ncap_success
+
+    def WatchFd(self, fdes, cb):
+      cdef ncap_result_e result
+
+      result = self._ncap.watch_fd(self._ncap, fdes,
+                                   <ncap_watcher_t>watcher, <void*>cb)
+
+      return result == ncap_success
+
+    def DropFd(self, fdes):
+      cdef ncap_result_e result
+
+      result = self._ncap.drop_fd(self._ncap, fdes)
       return result == ncap_success
 
     def Filter(self, filter):
