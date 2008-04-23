@@ -149,8 +149,8 @@ error:
 	return NULL;
 }
 
-ncap_msg_t
-wrap_python_to_ncap_msg(PyObject *obj)
+int
+wrap_python_to_ncap_msg(PyObject *src, ncap_msg_t dst)
 {
-	return NULL;
+	return -1;
 }
