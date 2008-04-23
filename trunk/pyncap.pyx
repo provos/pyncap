@@ -75,6 +75,10 @@ cdef extern from "ncap.h":
     ctypedef ncap_msg *ncap_msg_t
     ctypedef ncap_msg *ncap_msg_ct
 
+    ctypedef struct ncap
+    ctypedef void (*ncap_callback_t)(ncap *ncap, void *ctx,
+                                     ncap_msg_ct msg_ct,
+                                     char *msg)
     ctypedef struct ncap:
         ncap_pvt_t pvt
         char *errstr
@@ -82,25 +86,35 @@ cdef extern from "ncap.h":
                                int promisc, int vlans[], int vlan, int *fdes)
         ncap_result_e (*drop_if)(ncap *ncap, int fdes)
         ncap_result_e (*filter)(ncap *ncap, char *filter)
+        ncap_result_e (*collect)(ncap *ncap, int polling, ncap_callback_t cb,
+                                 void *closure)
         ncap_result_e (*write)(ncap *ncap, ncap_msg_ct msg, int fdes)
         void (*stop)(ncap *obj)
         void (*destroy)(ncap *obj)
 
     ctypedef ncap *ncap_t
 
-    ctypedef void (*ncap_callback_t)(ncap_t ncap, void *ctx,
-                                     ncap_msg_ct msg_ct,
-                                     char *msg)
     ctypedef void (*ncap_watcher_t)(ncap_t ncap, void *ctx, int fdes)
 
     ncap_t ncap_create(int maxmsg)
 
 cdef extern from "wrap.h":
-  PyObject* wrap_ncap_msg_to_python(ncap_msg_t msg)
+  object wrap_ncap_msg_to_python(ncap_msg_t msg)
   ncap_msg_t wrap_python_to_ncap_msg(PyObject *obj)
 
 class NCapError(Exception):
     pass
+
+#
+# Deal with the callback from collect
+#
+
+cdef void callback(ncap_t ncap, void *ctx, ncap_msg_ct msg, char *some):
+  cdef object converted
+
+  converted = wrap_ncap_msg_to_python(msg)
+  
+  (<object>ctx)(some, converted)
 
 #
 # Make NCap into a proper class
@@ -168,4 +182,15 @@ cdef class NCap:
         raise NCapError, "cannot convert to ncap_msg"
 
       result = self._ncap.write(self._ncap, ncap_msg, fdes)
+      return result == ncap_success
+
+    def Collect(self, polling, f):
+      """Run data collection, either once if polling is set or
+      until Stop() has been called.   The callback is invoked for
+      each collected message."""
+      cdef ncap_result_e result
+
+      result = self._ncap.collect(self._ncap, polling,
+                                  <ncap_callback_t>callback, <void*>f)
+
       return result == ncap_success
