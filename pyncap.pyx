@@ -38,13 +38,14 @@ cdef extern from "stdio.h":
 
 cdef extern from "time.h":
   ctypedef long time_t
-  ctypedef struct timespec:
+  struct timespec:
     time_t tv_sec
     long tv_nsec
 
 cdef extern from "stdlib.h":
   void *malloc(int len)
   void free(void *buf)
+  int sizeof()
 
 cdef extern from "ncap.h":
     ctypedef enum ncap_np_e:
@@ -69,7 +70,7 @@ cdef extern from "ncap.h":
     ctypedef union ncap_np
     ctypedef union ncap_tp
     
-    ctypedef struct ncap_msg:
+    struct ncap_msg:
       timespec ts
       unsigned user1
       unsigned user2
@@ -77,7 +78,7 @@ cdef extern from "ncap.h":
       ncap_tp_e tp
       size_t paylen
       char *payload
-      
+
     ctypedef ncap_msg *ncap_msg_t
     ctypedef ncap_msg *ncap_msg_ct
 
@@ -279,15 +280,15 @@ cdef class NCap:
 
       self._ncap.stop(self._ncap)
 
-    def Write(self, msg, fdes):
-      cdef ncap_msg_t ncap_msg
+    def Write(self, msg, file):
+      """Writes the msg to the specified file."""
+      cdef ncap_msg tmp
       cdef ncap_result_e result
       
-      ncap_msg = wrap_python_to_ncap_msg(<PyObject *>msg)
-      if not ncap_msg:
+      if wrap_python_to_ncap_msg(<PyObject *>msg, &tmp) == -1:
         raise NCapError, "cannot convert to ncap_msg"
 
-      result = self._ncap.write(self._ncap, ncap_msg, fdes)
+      result = self._ncap.write(self._ncap, &tmp, file.fileno())
       return result == ncap_success
 
     def Collect(self, polling, f):

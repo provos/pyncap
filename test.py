@@ -4,16 +4,22 @@
 import pyncap
 
 n = pyncap.NCap(10000)
-fd = n.AddIf("en0", "tcp or udp", True, [])
+fd = n.AddIf("lo0", "tcp or udp", True, [])
 print n.DropFd(100)
 print n.LastError()
 
+fp = open('/tmp/ncap.out', 'w')
 count = 0
 
-def Output(x,y):
+def Output(x, ncap):
   global count
-  print x,y
+  global fp
+  global n
+  
+  print x, ncap
 
+  n.Write(ncap, fp)
+  
   count += 1
   if count >= 10:
     n.Stop()
