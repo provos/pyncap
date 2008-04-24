@@ -152,5 +152,78 @@ error:
 int
 wrap_python_to_ncap_msg(PyObject *src, ncap_msg_t dst)
 {
-	return -1;
+	PyObject *obj;
+
+	memset(dst, 0, sizeof(*dst));
+
+	obj = PyDict_GetItemString(src, "ts");
+	if (obj == NULL || !PyLong_Check(obj)) {
+		return (-1);
+	} else {
+		unsigned long long val = PyLong_AsUnsignedLongLong(obj);
+		dst->ts.tv_sec = val / 1000000L;
+		dst->ts.tv_nsec = val % 1000000L * 1000;
+	}
+
+	obj = PyDict_GetItemString(src, "user1");
+	if (obj == NULL || !PyInt_Check(obj)) {
+		return (-1);
+	} else {
+		dst->user1 = PyInt_AsLong(obj);
+	}
+
+	obj = PyDict_GetItemString(src, "user2");
+	if (obj == NULL || !PyInt_Check(obj)) {
+		return (-1);
+	} else {
+		dst->user2 = PyInt_AsLong(obj);
+	}
+
+	obj = PyDict_GetItemString(src, "np");
+	if (obj == NULL || !PyString_Check(obj)) {
+		return (-1);
+	} else {
+		const char *what = PyString_AsString(obj);
+		if (what == NULL)
+			return (-1);
+		dst->np = strcmp(what, "ip6") == 0 ? ncap_ip6 : ncap_ip4;
+	}
+
+	obj = PyDict_GetItemString(src, "tp");
+	if (obj == NULL || !PyString_Check(obj)) {
+		return (-1);
+	} else {
+		const char *what = PyString_AsString(obj);
+		if (what == NULL)
+			return (-1);
+		dst->tp = strcmp(what, "tcp") == 0 ? ncap_tcp : ncap_udp;
+	}
+
+	obj = PyDict_GetItemString(src, "npu");
+	if (obj == NULL)
+		return (-1);
+	if (python_to_ncap_np(dst->np, obj, &dst->npu) == -1)
+		return (-1);
+
+	obj = PyDict_GetItemString(src, "tpu");
+	if (obj == NULL)
+		return (-1);
+	if (python_to_ncap_tp(dst->tp, obj, &dst->tpu) == -1)
+		return (-1);
+
+	obj = PyDict_GetItemString(src, "payload");
+	if (obj == NULL || !PyString_Check(obj)) {
+		return (-1);
+	} else {
+		char *payload;
+		int size;
+
+		if (PyString_AsStringAndSize(obj, &payload, &size) == -1)
+			return (-1);
+
+		dst->payload = (unsigned char *)payload;
+		dst->paylen = size;
+	}
+
+	return 0;
 }
