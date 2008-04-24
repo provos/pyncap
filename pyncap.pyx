@@ -107,6 +107,7 @@ cdef extern from "ncap.h":
         ncap_result_e (*collect)(ncap_t ncap, int polling, ncap_callback_t cb,
                                  void *closure)
         ncap_result_e (*write)(ncap_t ncap, ncap_msg_ct msg, int fdes)
+        ncap_result_e (*send)(ncap_t, ncap_msg_ct, int fdes, int flags)
         void (*stop)(ncap *obj)
         void (*destroy)(ncap *obj)
 
@@ -281,14 +282,34 @@ cdef class NCap:
       self._ncap.stop(self._ncap)
 
     def Write(self, msg, file):
-      """Writes the msg to the specified file."""
+      """Writes the msg to the specified file.  If msg is None, an
+      ncap header is output.  This should be done periodically."""
       cdef ncap_msg tmp
       cdef ncap_result_e result
-      
-      if wrap_python_to_ncap_msg(<PyObject *>msg, &tmp) == -1:
-        raise NCapError, "cannot convert to ncap_msg"
 
-      result = self._ncap.write(self._ncap, &tmp, file.fileno())
+      if not msg:
+        result = self._ncap.write(self._ncap, NULL, file.fileno())
+      else:
+        if wrap_python_to_ncap_msg(<PyObject *>msg, &tmp) == -1:
+          raise NCapError, "cannot convert to ncap_msg"
+
+        result = self._ncap.write(self._ncap, &tmp, file.fileno())
+
+      return result == ncap_success
+
+    def Send(self, msg, fdes, flags):
+      """Sends the msg to the specified socket."""
+      cdef ncap_msg tmp
+      cdef ncap_result_e result
+
+      if not msg:
+        result = self._ncap.send(self._ncap, NULL, fdes, flags)
+      else:
+        if wrap_python_to_ncap_msg(<PyObject *>msg, &tmp) == -1:
+          raise NCapError, "cannot convert to ncap_msg"
+
+        result = self._ncap.send(self._ncap, &tmp, fdes, flags)
+
       return result == ncap_success
 
     def Collect(self, polling, f):

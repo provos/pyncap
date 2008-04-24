@@ -9,6 +9,7 @@ print n.DropFd(100)
 print n.LastError()
 
 fp = open('/tmp/ncap.out', 'w')
+n.Write(None, fp)
 count = 0
 
 def Output(x, ncap):
