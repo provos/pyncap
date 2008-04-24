@@ -1,4 +1,5 @@
 # Python bindings for ISC's Ncap library
+#
 # Copyright (c) 2008 Niels Provos.
 # All rights reserved.
 #
